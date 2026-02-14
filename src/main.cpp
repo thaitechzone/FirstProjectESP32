@@ -5,6 +5,14 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <PID_v1.h>
+
+// ตัวแปร PID
+double Setpoint, Input, Output;
+// ค่า Tuning (ปรับจูนตามความเหมาะสมของระบบจริง)
+double Kp = 10.0, Ki = 0.5, Kd = 1.0; 
+PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
+
 
 #define ONE_WIRE_BUS 14
 OneWire oneWire(ONE_WIRE_BUS);
