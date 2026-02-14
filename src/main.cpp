@@ -1,11 +1,37 @@
 /**
- * ESP32 PID Temperature Controller (Professional Edition)
- * ---------------------------------------------------
+ * ESP32 PID Temperature Controller (Professional Edition with State Machine)
+ * ---------------------------------------------------------------------------
  * รายละเอียด Hardware:
  * - MCU: ESP32 DevKit V2 Board (THAITECHZONE)
  * - Sensor: DS18B20 (ต่อที่ GPIO 14)
  * - Heater: MOSFET หรือ SSR (ต่อที่ GPIO 13) -> ควบคุมด้วย PWM
  * - Display: OLED 0.96" (I2C: SDA=21, SCL=22)
+ * - Buttons: SW1(GPIO 34), SW2(GPIO 35), SW3(GPIO 32)
+ * 
+ * State Machine:
+ * --------------
+ * 1. State_Processing (เริ่มต้น) - ควบคุม PID อัตโนมัติ
+ *    - แสดงอุณหภูมิปัจจุบัน, Setpoint, กำลังงาน, และค่า PID
+ *    - กด SW1 เพื่อเข้าโหมดตั้งค่า
+ * 
+ * 2. State_SetPoint_Config - ตั้งค่า Setpoint
+ *    - กด SW3 (Up) เพิ่มค่า Setpoint
+ *    - กด SW2 (Down) ลดค่า Setpoint
+ *    - กด SW1 เพื่อไปโหมด PID Config
+ * 
+ * 3. State_PID_Config - ตั้งค่า P, I, D
+ *    - กด SW1 เพื่อเลือก parameter (Kp/Ki/Kd)
+ *    - กด SW3 (Up) เพิ่มค่า parameter ที่เลือก
+ *    - กด SW2 (Down) ลดค่า parameter ที่เลือก
+ *    - กด SW1 เพื่อไปโหมด Manual PWM
+ * 
+ * 4. State_Manual_PWM - ทดสอบ PWM แบบ Manual
+ *    - กด SW3 (Up) เพิ่มค่า PWM
+ *    - กด SW2 (Down) ลดค่า PWM
+ *    - กด SW1 เพื่อกลับโหมด Processing
+ * 
+ * 5. State_Display - (สำรองไว้ใช้ในอนาคต)
+ *    - State สำหรับแสดงผลอย่างเดียว
  */
 
 #include <Arduino.h>
@@ -81,8 +107,9 @@ enum SystemState {
 SystemState currentState = State_Processing;  // เริ่มต้นที่โหมดประมวลผล
 
 // ตัวแปรสำหรับ Config Menu
-int configIndex = 0;          // ใช้เลือกเมนู (0=Setpoint, 1=P, 2=I, 3=D)
+int configIndex = 0;          // ใช้เลือกเมนู (0=P, 1=I, 2=D)
 int manualPWM = 0;            // ค่า PWM สำหรับโหมด Manual (0-255)
+unsigned long sw1PressTime = 0;  // เวลากดปุ่ม SW1
 
 // ตัวแปรสำหรับ Button Debouncing
 unsigned long lastButtonTime = 0;
@@ -247,28 +274,38 @@ bool readButton(int pin) {
 void handleButtons() {
   // ปุ่ม SW1 (Mode/Enter) - สลับ State
   if (readButton(SW1_PIN)) {
-    switch(currentState) {
-      case State_Processing:
-        currentState = State_SetPoint_Config;
-        Serial.println(F("Mode: SetPoint Config"));
-        break;
-      case State_SetPoint_Config:
-        currentState = State_PID_Config;
-        configIndex = 0;
-        Serial.println(F("Mode: PID Config"));
-        break;
-      case State_PID_Config:
-        currentState = State_Manual_PWM;
-        manualPWM = 0;
-        Serial.println(F("Mode: Manual PWM"));
-        break;
-      case State_Manual_PWM:
-        currentState = State_Processing;
-        Serial.println(F("Mode: Processing"));
-        break;
-      default:
-        currentState = State_Processing;
-        break;
+    // ถ้าอยู่ใน PID Config Mode ให้สลับ parameter
+    if (currentState == State_PID_Config) {
+      configIndex = (configIndex + 1) % 3;  // วน 0->1->2->0
+      Serial.print(F("Select Parameter: "));
+      if (configIndex == 0) Serial.println(F("Kp"));
+      else if (configIndex == 1) Serial.println(F("Ki"));
+      else Serial.println(F("Kd"));
+    } else {
+      // สลับ State ปกติ
+      switch(currentState) {
+        case State_Processing:
+          currentState = State_SetPoint_Config;
+          Serial.println(F("Mode: SetPoint Config"));
+          break;
+        case State_SetPoint_Config:
+          currentState = State_PID_Config;
+          configIndex = 0;
+          Serial.println(F("Mode: PID Config"));
+          break;
+        case State_PID_Config:
+          currentState = State_Manual_PWM;
+          manualPWM = 0;
+          Serial.println(F("Mode: Manual PWM"));
+          break;
+        case State_Manual_PWM:
+          currentState = State_Processing;
+          Serial.println(F("Mode: Processing"));
+          break;
+        default:
+          currentState = State_Processing;
+          break;
+      }
     }
     delay(10);  // Small delay after state change
   }
@@ -445,18 +482,10 @@ void statePIDConfig() {
     display.print(F(" Kd: ")); display.println(Kd, 2);
     
     display.setCursor(0, 54);
-    display.print(F("UP/DN:+/-  SW1:Next"));
+    display.print(F("SW1:Sel UP/DN:+/-"));
     
     display.display();
     lastDisplayTime = millis();
-  }
-  
-  // ใช้ปุ่ม SW3 กดค้าง (long press simulation) เพื่อเปลี่ยนตัวแปร
-  // สำหรับความง่าย เราจะให้กด SW3 หลายครั้งเพื่อวนเปลี่ยน parameter
-  static unsigned long lastIndexChange = 0;
-  if (millis() - lastIndexChange > 2000) {
-    // ทุก 2 วินาที วนเปลี่ยนไปยัง parameter ถัดไป
-    // หรือสามารถเพิ่มปุ่มอีกอันเพื่อเลือก parameter
   }
 }
 
