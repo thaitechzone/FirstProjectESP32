@@ -23,7 +23,7 @@
  *    - กด SW1 เพื่อเลือก parameter (Kp/Ki/Kd)
  *    - กด SW3 (Up) เพิ่มค่า parameter ที่เลือก
  *    - กด SW2 (Down) ลดค่า parameter ที่เลือก
- *    - กด SW1 เพื่อไปโหมด Manual PWM
+ *    - กด SW1 ครบ 4 ครั้ง เพื่อไปโหมด Manual PWM
  * 
  * 4. State_Manual_PWM - ทดสอบ PWM แบบ Manual
  *    - กด SW3 (Up) เพิ่มค่า PWM
@@ -109,7 +109,7 @@ SystemState currentState = State_Processing;  // เริ่มต้นที�
 // ตัวแปรสำหรับ Config Menu
 int configIndex = 0;          // ใช้เลือกเมนู (0=P, 1=I, 2=D)
 int manualPWM = 0;            // ค่า PWM สำหรับโหมด Manual (0-255)
-unsigned long sw1PressTime = 0;  // เวลากดปุ่ม SW1
+int pidCycleCount = 0;        // นับจำนวนรอบการกด SW1 ใน PID Config
 
 // ตัวแปรสำหรับ Button Debouncing
 unsigned long lastButtonTime = 0;
@@ -277,10 +277,22 @@ void handleButtons() {
     // ถ้าอยู่ใน PID Config Mode ให้สลับ parameter
     if (currentState == State_PID_Config) {
       configIndex = (configIndex + 1) % 3;  // วน 0->1->2->0
-      Serial.print(F("Select Parameter: "));
-      if (configIndex == 0) Serial.println(F("Kp"));
-      else if (configIndex == 1) Serial.println(F("Ki"));
-      else Serial.println(F("Kd"));
+      pidCycleCount++;
+      
+      // ถ้าวนครบ 1 รอบ (กด SW1 ครบ 3 ครั้ง) และกลับมาที่ Kp อีกครั้ง
+      // แสดงว่าผู้ใช้ตั้งค่าเสร็จแล้ว ให้ไปโหมดถัดไป
+      if (pidCycleCount >= 4) {  // 4 = เลือก Kp, Ki, Kd แล้วกลับมา Kp อีกรอบ
+        currentState = State_Manual_PWM;
+        manualPWM = 0;
+        pidCycleCount = 0;
+        configIndex = 0;
+        Serial.println(F("Mode: Manual PWM"));
+      } else {
+        Serial.print(F("Select Parameter: "));
+        if (configIndex == 0) Serial.println(F("Kp"));
+        else if (configIndex == 1) Serial.println(F("Ki"));
+        else Serial.println(F("Kd"));
+      }
     } else {
       // สลับ State ปกติ
       switch(currentState) {
@@ -291,6 +303,7 @@ void handleButtons() {
         case State_SetPoint_Config:
           currentState = State_PID_Config;
           configIndex = 0;
+          pidCycleCount = 0;
           Serial.println(F("Mode: PID Config"));
           break;
         case State_PID_Config:
@@ -307,7 +320,6 @@ void handleButtons() {
           break;
       }
     }
-    delay(10);  // Small delay after state change
   }
 }
 
@@ -482,7 +494,12 @@ void statePIDConfig() {
     display.print(F(" Kd: ")); display.println(Kd, 2);
     
     display.setCursor(0, 54);
-    display.print(F("SW1:Sel UP/DN:+/-"));
+    display.print(F("SW1:Next"));
+    if (pidCycleCount > 0) {
+      display.print(F(" ("));
+      display.print(pidCycleCount);
+      display.print(F("/4)"));
+    }
     
     display.display();
     lastDisplayTime = millis();
