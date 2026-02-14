@@ -28,8 +28,16 @@ void updateDisplay(double Input); // prototype ฟังก์ชันแสด
 #define ISOIN1_PIN 33
 #define ISOIN2_PIN 27
 
+// การตั้งค่า PWM (สำหรับ ESP32)
+#define HEATER_PIN 13    // ขาจ่ายสัญญาณ PWM ไปยัง Heater Driver
+
+const int PWM_FREQ = 1000;     // ความถี่ 1kHz (เหมาะกับ MOSFET)
+const int PWM_CHANNEL = 0;     // ช่องสัญญาณ PWM 0
+const int PWM_RESOLUTION = 8;  // ความละเอียด 8-bit (ค่า 0-255)
+
 
 void setup() {
+
   pinMode(RL1_PIN, OUTPUT);
   pinMode(RL2_PIN, OUTPUT);
   pinMode(RL3_PIN, OUTPUT);
@@ -53,6 +61,11 @@ void setup() {
   display.display();
   delay(2000);
 
+   // --- A. ตั้งค่า PWM สำหรับ Heater ---
+  ledcSetup(PWM_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcAttachPin(HEATER_PIN, PWM_CHANNEL);
+  ledcWrite(PWM_CHANNEL, 0); // เริ่มต้นปิด Heater
+
 }
 
 void loop() {
@@ -61,7 +74,11 @@ void loop() {
   Serial.print("Temp C: ");
   Serial.println(currentTemp);
 
+  //เรียกใช้งาน PWM
+  ledcWrite(PWM_CHANNEL, 35); // เริ่มต้นเปิด 50% [0-255]
+
   updateDisplay(currentTemp);
+
 
   int value = digitalRead(SW1_PIN);
   Serial.print("SW1=");
