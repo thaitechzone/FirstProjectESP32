@@ -171,23 +171,23 @@ void setup() {
   display.display();
   delay(1500);
 
-  // --- D. โหลดการตั้งค่าจาก Memory ---
+  // --- D. เริ่มต้นสวิตช์ ---
+  Mode.begin();
+  Down.begin();
+  Up.begin();
+
+  // --- E. เริ่มต้น Relay (ต้องทำก่อน loadSettings) ---
+  RL1.begin();
+  RL2.begin();
+  RL3.begin();
+
+  // --- F. โหลดการตั้งค่าจาก Memory ---
   loadSettings();
   
   // กำหนดขอบเขต Output ให้ตรงกับ PWM (0-255)
   myPID.SetOutputLimits(0, 255);
   myPID.SetMode(AUTOMATIC);
   myPID.SetTunings(Kp, Ki, Kd);
-
-  // --- E. เริ่มต้นสวิตช์ ---
-  Mode.begin();
-  Down.begin();
-  Up.begin();
-
-  // --- F. เริ่มต้น Relay (ปิดทั้งหมด) ---
-  RL1.begin();
-  RL2.begin();
-  RL3.begin();
 
   Serial.println(F("--- ESP32 PID Ready ---"));
   Serial.println(F("Settings loaded from memory"));
@@ -547,6 +547,9 @@ void stateManualRelay() {
     
     if (readyToChange && duration >= 3000) {
       // กดค้างครบ 3s แล้วปล่อย -> กลับไป PID
+      // บันทึก Relay State ก่อนออก
+      saveSettings();
+      
       // แสดงข้อความยืนยัน
       display.clearDisplay();
       display.setTextSize(2);
@@ -559,7 +562,7 @@ void stateManualRelay() {
       delay(1000); // แสดง 1 วินาที
       
       currentState = STATE_PROCESSING;
-      Serial.println(F("Mode held 3s + Released -> PROCESSING"));
+      Serial.println(F("Mode held 3s + Released -> Relay Saved -> PROCESSING"));
       readyToChange = false;
     } else if (duration < 3000) {
       // กดสั้นกว่า 3 วินาที -> สลับ Relay
@@ -897,6 +900,12 @@ void saveSettings() {
   preferences.putFloat("ki", (float)Ki);
   preferences.putFloat("kd", (float)Kd);
   
+  // บันทึก Manual Relay State
+  preferences.putUChar("selRelay", (uint8_t)selectedRelay);
+  preferences.putBool("rl1State", RL1.isOn());
+  preferences.putBool("rl2State", RL2.isOn());
+  preferences.putBool("rl3State", RL3.isOn());
+  
   preferences.end();
   
   Serial.println(F(">>> Settings saved to Flash Memory <<<"));
@@ -914,6 +923,13 @@ void loadSettings() {
   Ki = preferences.getFloat("ki", 0.5);               // default 0.5
   Kd = preferences.getFloat("kd", 1.0);               // default 1.0
   
+  // โหลด Manual Relay State
+  uint8_t savedRelay = preferences.getUChar("selRelay", 0); // default SEL_RL1
+  selectedRelay = (RelaySelect)savedRelay;
+  bool rl1State = preferences.getBool("rl1State", false);
+  bool rl2State = preferences.getBool("rl2State", false);
+  bool rl3State = preferences.getBool("rl3State", false);
+  
   preferences.end();
   
   // จำกัดค่าให้อยู่ในช่วงที่ถูกต้อง
@@ -926,5 +942,14 @@ void loadSettings() {
   if (Kd < 0.0) Kd = 0.0;
   if (Kd > 10.0) Kd = 10.0;
   
+  // คืนค่าสถานะ Relay (ต้องทำหลัง begin())
+  if (rl1State) RL1.on(); else RL1.off();
+  if (rl2State) RL2.on(); else RL2.off();
+  if (rl3State) RL3.on(); else RL3.off();
+  
   Serial.println(F(">>> Settings loaded from Flash Memory <<<"));
+  Serial.print(F("Selected Relay: ")); Serial.println(selectedRelay + 1);
+  Serial.print(F("RL1: ")); Serial.print(RL1.isOn() ? F("ON") : F("OFF"));
+  Serial.print(F(", RL2: ")); Serial.print(RL2.isOn() ? F("ON") : F("OFF"));
+  Serial.print(F(", RL3: ")); Serial.println(RL3.isOn() ? F("ON") : F("OFF"));
 }
