@@ -16,6 +16,7 @@
 #include <DallasTemperature.h>
 #include <PID_v1.h>
 #include <DevSW.h>
+#include <DevRelay.h>
 #include <Preferences.h>
 
 // =========================================
@@ -74,6 +75,12 @@ PID myPID(&Input, &Output, &Setpoint, Kp, Ki, Kd, DIRECT);
 DevSW Mode(SW1_PIN);  // Mode/Enter
 DevSW Down(SW2_PIN);  // Down
 DevSW Up(SW3_PIN);    // Up
+
+// สร้าง Object สำหรับ Relay ทั้ง 3 ตัว
+// Active LOW (false) เนื่องจาก Relay Module ส่วนใหญ่ใช้ LOW เปิด
+DevRelay RL1(RL1_PIN, false);  // รีเลย์ 1
+DevRelay RL2(RL2_PIN, false);  // รีเลย์ 2
+DevRelay RL3(RL3_PIN, false);  // รีเลย์ 3
 
 // =========================================
 // 4. State Machine Definitions
@@ -164,6 +171,11 @@ void setup() {
   Mode.begin();
   Down.begin();
   Up.begin();
+
+  // --- F. เริ่มต้น Relay (ปิดทั้งหมด) ---
+  RL1.begin();
+  RL2.begin();
+  RL3.begin();
 
   Serial.println(F("--- ESP32 PID Ready ---"));
   Serial.println(F("Settings loaded from memory"));
