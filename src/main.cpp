@@ -228,64 +228,8 @@ void loop() {
  * จัดการปุ่มกดตาม State ปัจจุบัน
  */
 void handleButtonPress() {
-  // SW1 = Mode/Enter - สลับ State หรือยืนยัน
-  if (Mode.onPressed()) {
-    Serial.print(F("Mode/Enter pressed, State: "));
-    
-    switch (currentState) {
-      case STATE_PROCESSING:
-        currentState = STATE_SETPOINT_CONFIG;
-        Serial.println(F("SETPOINT_CONFIG"));
-        break;
-        
-      case STATE_SETPOINT_CONFIG:
-        // บันทึกการตั้งค่า Setpoint
-        saveSettings();
-        currentState = STATE_PID_CONFIG;
-        pidConfigParam = CONF_KP; // เริ่มที่ Kp
-        Serial.println(F("SETPOINT_CONFIG -> Saved!"));
-        Serial.println(F("PID_CONFIG"));
-        break;
-        
-      case STATE_PID_CONFIG:
-        // ในโหมด PID Config กด Enter เพื่อสลับระหว่าง Kp, Ki, Kd
-        if (pidConfigParam == CONF_KP) {
-          pidConfigParam = CONF_KI;
-          Serial.println(F("  -> Adjust Ki"));
-        } else if (pidConfigParam == CONF_KI) {
-          pidConfigParam = CONF_KD;
-          Serial.println(F("  -> Adjust Kd"));
-        } else {
-          // เสร็จแล้ว บันทึกการตั้งค่า PID
-          saveSettings();
-          currentState = STATE_MANUAL_PWM;
-          Serial.println(F("PID_CONFIG -> Saved!"));
-          Serial.println(F("MANUAL_PWM"));
-        }
-        break;
-        
-      case STATE_MANUAL_PWM:
-        currentState = STATE_MANUAL_RELAY;
-        selectedRelay = SEL_RL1; // เริ่มที่ Relay 1
-        Serial.println(F("MANUAL_RELAY"));
-        break;
-        
-      case STATE_MANUAL_RELAY:
-        // สลับระหว่าง RL1, RL2, RL3
-        if (selectedRelay == SEL_RL1) {
-          selectedRelay = SEL_RL2;
-          Serial.println(F("  -> Select RL2"));
-        } else if (selectedRelay == SEL_RL2) {
-          selectedRelay = SEL_RL3;
-          Serial.println(F("  -> Select RL3"));
-        } else {
-          // RL3 -> กลับไปหน้าแรก
-          currentState = STATE_PROCESSING;
-          Serial.println(F("PROCESSING (Normal)"));
-        }
-        break;
-    }
-  }
+  // SW1 = Mode/Enter - จะจัดการใน state functions แต่ละตัว
+  // (ใช้ long press 3s ทุก state)
 
   // SW3 = Up - เพิ่มค่า
   if (Up.onPressed()) {
@@ -435,6 +379,26 @@ void processState() {
  * STATE_PROCESSING - ทำงาน PID ควบคุมปกติ
  */
 void stateProcessing() {
+  static bool readyToChange = false; // พร้อมเปลี่ยน state หรือยัง
+  
+  // ตรวจสอบการกดค้าง 3 วินาที -> พร้อมเปลี่ยน
+  if (Mode.pressedFor(3000)) {
+    readyToChange = true;
+  }
+  
+  // เมื่อปล่อยปุ่ม -> ตรวจสอบว่าพร้อมหรือไม่
+  if (Mode.wasReleased()) {
+    if (readyToChange) {
+      // กดค้างครบ 3s แล้วปล่อย -> เปลี่ยน state
+      currentState = STATE_SETPOINT_CONFIG;
+      Serial.println(F("Mode held 3s + Released -> SETPOINT_CONFIG"));
+      readyToChange = false;
+      return;
+    }
+    // ปล่อยก่อน 3s -> รีเซ็ต
+    readyToChange = false;
+  }
+  
   // อ่านค่าอุณหภูมิ
   sensors.requestTemperatures(); 
   double currentTemp = sensors.getTempCByIndex(0);
@@ -470,35 +434,151 @@ void stateProcessing() {
  * STATE_SETPOINT_CONFIG - ตั้งค่า Setpoint
  */
 void stateSetpointConfig() {
-  // แค่รอปุ่มกด ไม่ต้องทำอะไร
-  // การแสดงผลจะดูแลใน updateDisplay()
+  static bool readyToChange = false; // พร้อมเปลี่ยน state หรือยัง
+  
+  // ตรวจสอบการกดค้าง 3 วินาที -> พร้อมบันทึกและไปต่อ
+  if (Mode.pressedFor(3000)) {
+    readyToChange = true;
+  }
+  
+  // เมื่อปล่อยปุ่ม -> ตรวจสอบว่าพร้อมหรือไม่
+  if (Mode.wasReleased()) {
+    if (readyToChange) {
+      // กดค้างครบ 3s แล้วปล่อย -> บันทึกและเปลี่ยน state
+      saveSettings();
+      currentState = STATE_PID_CONFIG;
+      pidConfigParam = CONF_KP; // เริ่มที่ Kp
+      Serial.println(F("Mode held 3s + Released -> Setpoint Saved -> PID_CONFIG"));
+      readyToChange = false;
+    } else {
+      // ปล่อยก่อน 3s -> รีเซ็ต
+      readyToChange = false;
+    }
+  }
 }
 
 /**
  * STATE_PID_CONFIG - ตั้งค่า PID Parameters
  */
 void statePIDConfig() {
-  // แค่รอปุ่มกด ไม่ต้องทำอะไร
-  // การแสดงผลจะดูแลใน updateDisplay()
+  static bool readyToChange = false; // พร้อมเปลี่ยน state หรือยัง
+  
+  // ตรวจสอบการกดค้าง 3 วินาที -> พร้อมบันทึกและไปต่อ
+  if (Mode.pressedFor(3000)) {
+    readyToChange = true;
+  }
+  
+  // เมื่อปล่อยปุ่ม
+  if (Mode.wasReleased()) {
+    unsigned long duration = Mode.pressedDuration();
+    
+    if (readyToChange && duration >= 3000) {
+      // กดค้างครบ 3s แล้วปล่อย -> บันทึกและเปลี่ยน state
+      saveSettings();
+      currentState = STATE_MANUAL_PWM;
+      Serial.println(F("Mode held 3s + Released -> PID Saved -> MANUAL_PWM"));
+      readyToChange = false;
+    } else if (duration < 3000) {
+      // กดสั้นกว่า 3 วินาที -> สลับพารามิเตอร์
+      if (pidConfigParam == CONF_KP) {
+        pidConfigParam = CONF_KI;
+        Serial.println(F("  -> Adjust Ki"));
+      } else if (pidConfigParam == CONF_KI) {
+        pidConfigParam = CONF_KD;
+        Serial.println(F("  -> Adjust Kd"));
+      } else {  // CONF_KD
+        pidConfigParam = CONF_KP;
+        Serial.println(F("  -> Adjust Kp"));
+      }
+      readyToChange = false; // reset flag
+    } else {
+      // กดค้างแต่ไม่ครบ 3s แน่นอน -> reset flag
+      readyToChange = false;
+    }
+  }
 }
 
 /**
  * STATE_MANUAL_PWM - ทดสอบ PWM แบบ Manual
  */
 void stateManualPWM() {
+  static bool readyToChange = false; // พร้อมเปลี่ยน state หรือยัง
+  
   // ส่งค่า PWM แบบ Manual
   ledcWrite(PWM_CHANNEL, manualPWM);
   
   // ไม่อ่าน Sensor เพื่อไม่ให้ผลกระทบการกดปุ่ม
   // (requestTemperatures ใช้เวลา ~750ms ทำให้ตอบสนองช้า)
+  
+  // ตรวจสอบการกดค้าง 3 วินาที -> พร้อมเปลี่ยน
+  if (Mode.pressedFor(3000)) {
+    readyToChange = true;
+  }
+  
+  // เมื่อปล่อยปุ่ม -> ตรวจสอบว่าพร้อมหรือไม่
+  if (Mode.wasReleased()) {
+    if (readyToChange) {
+      // กดค้างครบ 3s แล้วปล่อย -> เปลี่ยน state
+      currentState = STATE_MANUAL_RELAY;
+      selectedRelay = SEL_RL1; // เริ่มที่ Relay 1
+      Serial.println(F("Mode held 3s + Released -> MANUAL_RELAY"));
+      readyToChange = false;
+    } else {
+      // ปล่อยก่อน 3s -> รีเซ็ต
+      readyToChange = false;
+    }
+  }
 }
 
 /**
  * STATE_MANUAL_RELAY - ควบคุม Relay แบบ Manual
  */
 void stateManualRelay() {
-  // ไม่ต้องทำอะไรที่นี่ การควบคุมเกิดจากปุ่มกด
-  // การแสดงผลจะดูแลใน updateDisplay()
+  static bool readyToChange = false; // พร้อมเปลี่ยน state หรือยัง
+  
+  // ตรวจสอบการกดค้าง 3 วินาที -> พร้อมกลับไป PID
+  if (Mode.pressedFor(3000)) {
+    readyToChange = true;
+  }
+  
+  // เมื่อปล่อยปุ่ม
+  if (Mode.wasReleased()) {
+    unsigned long duration = Mode.pressedDuration();
+    
+    if (readyToChange && duration >= 3000) {
+      // กดค้างครบ 3s แล้วปล่อย -> กลับไป PID
+      // แสดงข้อความยืนยัน
+      display.clearDisplay();
+      display.setTextSize(2);
+      display.setTextColor(WHITE);
+      display.setCursor(10, 20);
+      display.println(F("PID AUTO"));
+      display.setCursor(20, 40);
+      display.println(F("MODE"));
+      display.display();
+      delay(1000); // แสดง 1 วินาที
+      
+      currentState = STATE_PROCESSING;
+      Serial.println(F("Mode held 3s + Released -> PROCESSING"));
+      readyToChange = false;
+    } else if (duration < 3000) {
+      // กดสั้นกว่า 3 วินาที -> สลับ Relay
+      if (selectedRelay == SEL_RL1) {
+        selectedRelay = SEL_RL2;
+        Serial.println(F("  -> Select RL2"));
+      } else if (selectedRelay == SEL_RL2) {
+        selectedRelay = SEL_RL3;
+        Serial.println(F("  -> Select RL3"));
+      } else {  // SEL_RL3
+        selectedRelay = SEL_RL1;
+        Serial.println(F("  -> Select RL1"));
+      }
+      readyToChange = false; // reset flag
+    } else {
+      // กรณีอื่นๆ -> reset flag
+      readyToChange = false;
+    }
+  }
 }
 
 // =========================================
@@ -543,7 +623,17 @@ void displayStateProcessing() {
   // ส่วนหัว
   display.setTextSize(1);
   display.setCursor(0, 0);
-  display.print(F("PID AUTO MODE"));
+  
+  // แสดงข้อความเตือน + นับถอยหลัง
+  if (Mode.pressedFor(3000)) {
+     display.print(F(">> RELEASE NOW <<"));
+  } else if (Mode.pressedFor(2000)) {
+    display.print(F(">> Config [1] <<"));
+  } else if (Mode.pressedFor(1000)) {
+    display.print(F(">> Config [2] <<"));
+  } else {
+    display.print(F("PID AUTO MODE"));
+  }
 
   // แสดง PV (ตัวใหญ่)
   display.setTextSize(2);
@@ -581,8 +671,18 @@ void displayStateSetpoint() {
   display.setTextSize(1);
   display.setCursor(0, 15);
   display.print(F("UP/DOWN to adjust"));
+  
   display.setCursor(0, 25);
-  display.print(F("ENTER to next"));
+  // แสดงข้อความเตือน + นับถอยหลัง
+  if (Mode.pressedFor(3000)) {
+    display.print(F(">> RELEASE NOW <<"));
+  } else if (Mode.pressedFor(2000)) {
+    display.print(F(">>>> Save [1] <<<<"));
+  } else if (Mode.pressedFor(1000)) {
+    display.print(F(">>>> Save [2] <<<<"));
+  } else {
+    display.print(F("Hold 3s to Save"));
+  }
 
   // แสดงค่า Setpoint แบบใหญ่
   display.setTextSize(3);
@@ -599,29 +699,45 @@ void displayStatePIDConfig() {
   display.print(F("CONFIG PID"));
   
   display.setTextSize(1);
-  display.setCursor(0, 15);
+  
+  // แสดงข้อความเตือน + นับถอยหลัง
+  if (Mode.pressedFor(3000)) {
+    display.setCursor(0, 12);
+    display.print(F(">> RELEASE NOW <<"));
+  } else if (Mode.pressedFor(2000)) {
+    display.setCursor(0, 12);
+    display.print(F(">>>> Save [1] <<<<"));
+  } else if (Mode.pressedFor(1000)) {
+    display.setCursor(0, 12);
+    display.print(F(">>>> Save [2] <<<<"));
+  } else {
+    display.setCursor(0, 12);
+    display.print(F("Hold 3s Save&Exit"));
+  }
   
   // แสดงว่ากำลังปรับพารามิเตอร์ไหน
   if (pidConfigParam == CONF_KP) {
+    display.setTextSize(1);
+    display.setCursor(0, 24);
     display.print(F("> Kp (Proportional)"));
-    display.setTextSize(3);
-    display.setCursor(10, 35);
+    display.setTextSize(2);
+    display.setCursor(10, 42);
     display.print(Kp, 1);
   } else if (pidConfigParam == CONF_KI) {
+    display.setTextSize(1);
+    display.setCursor(0, 24);
     display.print(F("> Ki (Integral)"));
-    display.setTextSize(3);
-    display.setCursor(10, 35);
+    display.setTextSize(2);
+    display.setCursor(10, 42);
     display.print(Ki, 2);
   } else if (pidConfigParam == CONF_KD) {
+    display.setTextSize(1);
+    display.setCursor(0, 24);
     display.print(F("> Kd (Derivative)"));
-    display.setTextSize(3);
-    display.setCursor(10, 35);
+    display.setTextSize(2);
+    display.setCursor(10, 42);
     display.print(Kd, 2);
   }
-  
-  display.setTextSize(1);
-  display.setCursor(0, 25);
-  display.print(F("UP/DOWN adjust"));
 }
 
 /**
@@ -634,24 +750,34 @@ void displayStateManualPWM() {
   
   // คำแนะนำ
   display.setTextSize(1);
-  display.setCursor(0, 14);
-  display.print(F("UP/DOWN: +/-10"));
-  display.setCursor(0, 24);
-  display.print(F("ENTER: Next"));
+  
+  // แสดงข้อความเตือน + นับถอยหลัง
+  if (Mode.pressedFor(3000)) {
+    display.setCursor(0, 12);
+    display.print(F(">> RELEASE NOW <<"));
+  } else if (Mode.pressedFor(2000)) {
+    display.setCursor(0, 12);
+    display.print(F(">>> Next [1] <<<"));
+  } else if (Mode.pressedFor(1000)) {
+    display.setCursor(0, 12);
+    display.print(F(">>> Next [2] <<<"));
+  } else {
+    display.setCursor(0, 12);
+    display.print(F("Hold 3s Next"));
+  }
 
   // แสดงค่า PWM (0-255)
-  display.setCursor(0, 38);
-  display.print(F("PWM: "));
+  display.setTextSize(1);
+  display.setCursor(0, 26);
+  display.print(F("PWM Value:"));
   display.setTextSize(2);
-  display.setCursor(35, 36);
+  display.setCursor(10, 38);
   display.print(manualPWM);
 
   // แสดงเปอร์เซ็นต์ PWM
   display.setTextSize(1);
-  display.setCursor(0, 54);
+  display.setCursor(0, 56);
   display.print(F("Power: "));
-  display.setTextSize(1);
-  display.setCursor(50, 52);
   int pwmPercent = map(manualPWM, 0, 255, 0, 100);
   display.print(pwmPercent);
   display.print(F("%"));
@@ -670,9 +796,27 @@ void displayStateManualRelay() {
   display.setCursor(0, 0);
   display.print(F("MANUAL RELAY MODE"));
 
+  // คำแนะนำ
+  display.setTextSize(1);
+  
+  // แสดงข้อความเตือน + นับถอยหลัง
+  if (Mode.pressedFor(3000)) {
+    display.setCursor(0, 12);
+    display.print(F(">> RELEASE NOW <<"));
+  } else if (Mode.pressedFor(2000)) {
+    display.setCursor(0, 12);
+    display.print(F(">>> Exit [1] <<<"));
+  } else if (Mode.pressedFor(1000)) {
+    display.setCursor(0, 12);
+    display.print(F(">>> Exit [2] <<<"));
+  } else {
+    display.setCursor(0, 12);
+    display.print(F("Hold 3s Exit"));
+  }
+
   // แสดง Relay ที่เลือก
   display.setTextSize(2);
-  display.setCursor(0, 24);  // จัดกลางจอ
+  display.setCursor(0, 26);  // จัดกลางจอ
   if (selectedRelay == SEL_RL1) {
     display.print(F(">>RELAY1<<"));
   } else if (selectedRelay == SEL_RL2) {

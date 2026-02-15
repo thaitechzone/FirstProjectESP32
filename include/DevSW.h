@@ -18,6 +18,8 @@ private:
     bool lastReadState;             // สถานะที่อ่านได้ล่าสุด
     unsigned long lastDebounceTime; // เวลาที่เปลี่ยนสถานะล่าสุด
     unsigned long debounceDelay;    // ระยะเวลา debounce (ms)
+    unsigned long pressedStartTime; // เวลาที่เริ่มกด (สำหรับกดค้าง)
+    unsigned long lastPressedDuration; // ระยะเวลาที่กดค้างครั้งล่าสุด
     
     bool pressedFlag;               // Flag บอกว่าเพิ่งกดใหม่
     bool releasedFlag;              // Flag บอกว่าเพิ่งปล่อย
@@ -35,6 +37,8 @@ public:
         this->lastState = false;
         this->lastReadState = true; // Pull-up = HIGH เมื่อไม่กด
         this->lastDebounceTime = 0;
+        this->pressedStartTime = 0;
+        this->lastPressedDuration = 0;
         this->pressedFlag = false;
         this->releasedFlag = false;
     }
@@ -73,9 +77,16 @@ public:
                 
                 // ตั้ง flag
                 if (currentState) {
-                    pressedFlag = true;   // เพิ่งกด
+                    pressedFlag = true;      // เพิ่งกด
+                    pressedStartTime = millis(); // เริ่มจับเวลา
+                    lastPressedDuration = 0; // เคลียร์ค่าเก่า
                 } else {
-                    releasedFlag = true;  // เพิ่งปล่อย
+                    releasedFlag = true;     // เพิ่งปล่อย
+                    // เก็บระยะเวลาที่กดค้างไว้ก่อนรีเซ็ต
+                    if (pressedStartTime > 0) {
+                        lastPressedDuration = millis() - pressedStartTime;
+                    }
+                    pressedStartTime = 0;    // รีเซ็ตเวลา
                 }
             }
         }
@@ -129,6 +140,31 @@ public:
      */
     bool onRisingEdge() {
         return wasReleased();
+    }
+
+    /**
+     * คืนค่าระยะเวลาที่กดค้างไว้ (milliseconds)
+     * @return เวลาที่กดค้าง (0 = ไม่ได้กด)
+     */
+    unsigned long pressedDuration() {
+        // ถ้ากำลังกดอยู่
+        if (currentState && pressedStartTime > 0) {
+            return millis() - pressedStartTime;
+        }
+        // ถ้าเพิ่งปล่อย ให้คืนค่าที่เก็บไว้
+        if (lastPressedDuration > 0) {
+            return lastPressedDuration;
+        }
+        return 0;
+    }
+
+    /**
+     * ตรวจสอบว่ากดค้างครบเวลาที่กำหนดหรือไม่
+     * @param ms ระยะเวลาที่ต้องการ (milliseconds)
+     * @return true = กดค้างครบเวลาแล้ว
+     */
+    bool pressedFor(unsigned long ms) {
+        return (pressedDuration() >= ms);
     }
 
     /**
