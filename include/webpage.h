@@ -190,7 +190,7 @@ const char WEBPAGE[] PROGMEM = R"rawliteral(
     <script>
         // Chart Configuration
         const ctx = document.getElementById('tempChart').getContext('2d');
-        const maxDataPoints = 50;
+        const maxDataPoints = 120;  // 120 points = 2 minutes (1 point/sec)
         
         // Create gradient for Setpoint
         const gradientSP = ctx.createLinearGradient(0, 0, 0, 400);
@@ -231,7 +231,7 @@ const char WEBPAGE[] PROGMEM = R"rawliteral(
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
-                aspectRatio: 2,
+                aspectRatio: 3.5,
                 animation: {
                     duration: 0
                 },
