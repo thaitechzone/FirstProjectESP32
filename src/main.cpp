@@ -18,6 +18,7 @@
 #include <DevSW.h>
 #include <DevRelay.h>
 #include <Preferences.h>
+#include "webserver.h"
 
 // =========================================
 // 1. การกำหนดขาพอร์ต (Pin Definitions)
@@ -195,6 +196,13 @@ void setup() {
   Serial.print(F("Kp: ")); Serial.print(Kp);
   Serial.print(F(", Ki: ")); Serial.print(Ki);
   Serial.print(F(", Kd: ")); Serial.println(Kd);
+  
+  // --- G. เริ่มต้น Web Server ---
+  initWebServer();
+  
+  // แสดง WiFi Info บนจอ OLED
+  displayWiFiInfo(display);
+  delay(5000); // แสดง 5 วินาที
 }
 
 // =========================================
@@ -205,6 +213,9 @@ void loop() {
   Mode.update();
   Down.update();
   Up.update();
+
+  // จัดการ Web Server
+  handleWebServer();
 
   // จัดการปุ่มกด
   handleButtonPress();
