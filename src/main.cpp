@@ -669,35 +669,28 @@ void displayStateManualRelay() {
   // หัวข้อ
   display.setCursor(0, 0);
   display.print(F("MANUAL RELAY MODE"));
-  
-  // คำแนะนำ
-  display.setTextSize(1);
-  display.setCursor(0, 12);
-  display.print(F("UP:ON DOWN:OFF"));
-  display.setCursor(0, 22);
-  display.print(F("ENTER:Select Relay"));
 
   // แสดง Relay ที่เลือก
-  display.setTextSize(1);
-  display.setCursor(30, 35);
+  display.setTextSize(2);
+  display.setCursor(0, 24);  // จัดกลางจอ
   if (selectedRelay == SEL_RL1) {
-    display.print(F(">> RL1 <<"));
+    display.print(F(">>RELAY1<<"));
   } else if (selectedRelay == SEL_RL2) {
-    display.print(F(">> RL2 <<"));
+    display.print(F(">>RELAY2<<"));
   } else if (selectedRelay == SEL_RL3) {
-    display.print(F(">> RL3 <<"));
+    display.print(F(">>RELAY3<<"));
   }
 
   // แสดงสถานะ Relay ทั้ง 3 ตัว
   display.setTextSize(1);
-  display.setCursor(0, 48);
-  display.print(F("RL1:"));
+  display.setCursor(0, 48);  // จัดกลาง
+  display.print(F("R1:"));
   display.print(RL1.isOn() ? F("ON ") : F("OFF"));
   
-  display.print(F(" RL2:"));
+  display.print(F(" R2:"));
   display.print(RL2.isOn() ? F("ON ") : F("OFF"));
   
-  display.print(F(" RL3:"));
+  display.print(F(" R3:"));
   display.print(RL3.isOn() ? F("ON") : F("OFF"));
 }
 
