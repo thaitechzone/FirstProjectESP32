@@ -88,9 +88,7 @@ DevRelay RL3(RL3_PIN, false);  // รีเลย์ 3
 enum SystemState {
   STATE_PROCESSING,      // PID Control (Normal Operation)
   STATE_SETPOINT_CONFIG, // Configure Setpoint
-  STATE_PID_CONFIG,      // Configure PID Parameters (Kp, Ki, Kd)
-  STATE_MANUAL_PWM,      // Manual PWM Test Mode
-  STATE_MANUAL_RELAY     // Manual Relay Control Mode
+  STATE_PID_CONFIG       // Configure PID Parameters (Kp, Ki, Kd)
 };
 
 enum PIDConfigParam {
@@ -99,21 +97,9 @@ enum PIDConfigParam {
   CONF_KD   // กำลังปรับ Kd
 };
 
-enum RelaySelect {
-  SEL_RL1,  // เลือก Relay 1
-  SEL_RL2,  // เลือก Relay 2
-  SEL_RL3   // เลือก Relay 3
-};
-
 // ตัวแปร State Machine
 SystemState currentState = STATE_PROCESSING;
 PIDConfigParam pidConfigParam = CONF_KP;
-
-// ตัวแปรสำหรับ Manual PWM Mode
-int manualPWM = 0;
-
-// ตัวแปรสำหรับ Manual Relay Mode
-RelaySelect selectedRelay = SEL_RL1;
 
 // ตัวแปรจับเวลา
 unsigned long lastDisplayTime = 0;
@@ -133,15 +119,11 @@ void processState();
 void stateProcessing();
 void stateSetpointConfig();
 void statePIDConfig();
-void stateManualPWM();
-void stateManualRelay();
 
 // Display Functions
 void displayStateProcessing();
 void displayStateSetpoint();
 void displayStatePIDConfig();
-void displayStateManualPWM();
-void displayStateManualRelay();
 
 void setup() {
   Serial.begin(115200);
@@ -259,30 +241,6 @@ void handleButtonPress() {
         }
         break;
         
-      case STATE_MANUAL_PWM:
-        manualPWM += 10;
-        if (manualPWM > 255) manualPWM = 255;
-        Serial.print(F("Manual PWM UP: ")); 
-        Serial.print(manualPWM);
-        Serial.print(F(" ("));
-        Serial.print(map(manualPWM, 0, 255, 0, 100));
-        Serial.println(F("%)"));
-        break;
-        
-      case STATE_MANUAL_RELAY:
-        // กด Up เพื่อเปิด Relay ที่เลือก
-        if (selectedRelay == SEL_RL1) {
-          RL1.on();
-          Serial.println(F("RL1 ON"));
-        } else if (selectedRelay == SEL_RL2) {
-          RL2.on();
-          Serial.println(F("RL2 ON"));
-        } else if (selectedRelay == SEL_RL3) {
-          RL3.on();
-          Serial.println(F("RL3 ON"));
-        }
-        break;
-        
       case STATE_PROCESSING:
         // ไม่ทำอะไรในโหมดปกติ
         break;
@@ -317,30 +275,6 @@ void handleButtonPress() {
         }
         break;
         
-      case STATE_MANUAL_PWM:
-        manualPWM -= 10;
-        if (manualPWM < 0) manualPWM = 0;
-        Serial.print(F("Manual PWM DOWN: ")); 
-        Serial.print(manualPWM);
-        Serial.print(F(" ("));
-        Serial.print(map(manualPWM, 0, 255, 0, 100));
-        Serial.println(F("%)"));
-        break;
-        
-      case STATE_MANUAL_RELAY:
-        // กด Down เพื่อปิด Relay ที่เลือก
-        if (selectedRelay == SEL_RL1) {
-          RL1.off();
-          Serial.println(F("RL1 OFF"));
-        } else if (selectedRelay == SEL_RL2) {
-          RL2.off();
-          Serial.println(F("RL2 OFF"));
-        } else if (selectedRelay == SEL_RL3) {
-          RL3.off();
-          Serial.println(F("RL3 OFF"));
-        }
-        break;
-        
       case STATE_PROCESSING:
         // ไม่ทำอะไรในโหมดปกติ
         break;
@@ -363,14 +297,6 @@ void processState() {
       
     case STATE_PID_CONFIG:
       statePIDConfig();
-      break;
-      
-    case STATE_MANUAL_PWM:
-      stateManualPWM();
-      break;
-      
-    case STATE_MANUAL_RELAY:
-      stateManualRelay();
       break;
   }
 }
@@ -473,10 +399,10 @@ void statePIDConfig() {
     unsigned long duration = Mode.pressedDuration();
     
     if (readyToChange && duration >= 3000) {
-      // กดค้างครบ 3s แล้วปล่อย -> บันทึกและเปลี่ยน state
+      // กดค้างครบ 3s แล้วปล่อย -> บันทึกและกลับไป PID
       saveSettings();
-      currentState = STATE_MANUAL_PWM;
-      Serial.println(F("Mode held 3s + Released -> PID Saved -> MANUAL_PWM"));
+      currentState = STATE_PROCESSING;
+      Serial.println(F("Mode held 3s + Released -> PID Saved -> PROCESSING"));
       readyToChange = false;
     } else if (duration < 3000) {
       // กดสั้นกว่า 3 วินาที -> สลับพารามิเตอร์
@@ -493,92 +419,6 @@ void statePIDConfig() {
       readyToChange = false; // reset flag
     } else {
       // กดค้างแต่ไม่ครบ 3s แน่นอน -> reset flag
-      readyToChange = false;
-    }
-  }
-}
-
-/**
- * STATE_MANUAL_PWM - ทดสอบ PWM แบบ Manual
- */
-void stateManualPWM() {
-  static bool readyToChange = false; // พร้อมเปลี่ยน state หรือยัง
-  
-  // ส่งค่า PWM แบบ Manual
-  ledcWrite(PWM_CHANNEL, manualPWM);
-  
-  // ไม่อ่าน Sensor เพื่อไม่ให้ผลกระทบการกดปุ่ม
-  // (requestTemperatures ใช้เวลา ~750ms ทำให้ตอบสนองช้า)
-  
-  // ตรวจสอบการกดค้าง 3 วินาที -> พร้อมเปลี่ยน
-  if (Mode.pressedFor(3000)) {
-    readyToChange = true;
-  }
-  
-  // เมื่อปล่อยปุ่ม -> ตรวจสอบว่าพร้อมหรือไม่
-  if (Mode.wasReleased()) {
-    if (readyToChange) {
-      // กดค้างครบ 3s แล้วปล่อย -> เปลี่ยน state
-      currentState = STATE_MANUAL_RELAY;
-      selectedRelay = SEL_RL1; // เริ่มที่ Relay 1
-      Serial.println(F("Mode held 3s + Released -> MANUAL_RELAY"));
-      readyToChange = false;
-    } else {
-      // ปล่อยก่อน 3s -> รีเซ็ต
-      readyToChange = false;
-    }
-  }
-}
-
-/**
- * STATE_MANUAL_RELAY - ควบคุม Relay แบบ Manual
- */
-void stateManualRelay() {
-  static bool readyToChange = false; // พร้อมเปลี่ยน state หรือยัง
-  
-  // ตรวจสอบการกดค้าง 3 วินาที -> พร้อมกลับไป PID
-  if (Mode.pressedFor(3000)) {
-    readyToChange = true;
-  }
-  
-  // เมื่อปล่อยปุ่ม
-  if (Mode.wasReleased()) {
-    unsigned long duration = Mode.pressedDuration();
-    
-    if (readyToChange && duration >= 3000) {
-      // กดค้างครบ 3s แล้วปล่อย -> กลับไป PID
-      // บันทึก Relay State ก่อนออก
-      saveSettings();
-      
-      // แสดงข้อความยืนยัน
-      display.clearDisplay();
-      display.setTextSize(2);
-      display.setTextColor(WHITE);
-      display.setCursor(10, 20);
-      display.println(F("PID AUTO"));
-      display.setCursor(20, 40);
-      display.println(F("MODE"));
-      display.display();
-      delay(1000); // แสดง 1 วินาที
-      
-      currentState = STATE_PROCESSING;
-      Serial.println(F("Mode held 3s + Released -> Relay Saved -> PROCESSING"));
-      readyToChange = false;
-    } else if (duration < 3000) {
-      // กดสั้นกว่า 3 วินาที -> สลับ Relay
-      if (selectedRelay == SEL_RL1) {
-        selectedRelay = SEL_RL2;
-        Serial.println(F("  -> Select RL2"));
-      } else if (selectedRelay == SEL_RL2) {
-        selectedRelay = SEL_RL3;
-        Serial.println(F("  -> Select RL3"));
-      } else {  // SEL_RL3
-        selectedRelay = SEL_RL1;
-        Serial.println(F("  -> Select RL1"));
-      }
-      readyToChange = false; // reset flag
-    } else {
-      // กรณีอื่นๆ -> reset flag
       readyToChange = false;
     }
   }
@@ -605,14 +445,6 @@ void updateDisplay() {
       
     case STATE_PID_CONFIG:
       displayStatePIDConfig();
-      break;
-      
-    case STATE_MANUAL_PWM:
-      displayStateManualPWM();
-      break;
-      
-    case STATE_MANUAL_RELAY:
-      displayStateManualRelay();
       break;
   }
 
@@ -743,104 +575,6 @@ void displayStatePIDConfig() {
   }
 }
 
-/**
- * แสดงผลโหมด STATE_MANUAL_PWM
- */
-void displayStateManualPWM() {
-  // หัวข้อ
-  display.setCursor(0, 0);
-  display.print(F("MANUAL PWM MODE"));
-  
-  // คำแนะนำ
-  display.setTextSize(1);
-  
-  // แสดงข้อความเตือน + นับถอยหลัง
-  if (Mode.pressedFor(3000)) {
-    display.setCursor(0, 12);
-    display.print(F(">> RELEASE NOW <<"));
-  } else if (Mode.pressedFor(2000)) {
-    display.setCursor(0, 12);
-    display.print(F(">>> Next [1] <<<"));
-  } else if (Mode.pressedFor(1000)) {
-    display.setCursor(0, 12);
-    display.print(F(">>> Next [2] <<<"));
-  } else {
-    display.setCursor(0, 12);
-    display.print(F("Hold 3s Next"));
-  }
-
-  // แสดงค่า PWM (0-255)
-  display.setTextSize(1);
-  display.setCursor(0, 26);
-  display.print(F("PWM Value:"));
-  display.setTextSize(2);
-  display.setCursor(10, 38);
-  display.print(manualPWM);
-
-  // แสดงเปอร์เซ็นต์ PWM
-  display.setTextSize(1);
-  display.setCursor(0, 56);
-  display.print(F("Power: "));
-  int pwmPercent = map(manualPWM, 0, 255, 0, 100);
-  display.print(pwmPercent);
-  display.print(F("%"));
-
-  // กราฟแท่งแสดง PWM
-  int barHeight = map(manualPWM, 0, 255, 0, 64);
-  display.drawRect(118, 0, 10, 64, WHITE);
-  display.fillRect(118, 64 - barHeight, 10, barHeight, WHITE);
-}
-
-/**
- * แสดงผลโหมด STATE_MANUAL_RELAY
- */
-void displayStateManualRelay() {
-  // หัวข้อ
-  display.setCursor(0, 0);
-  display.print(F("MANUAL RELAY MODE"));
-
-  // คำแนะนำ
-  display.setTextSize(1);
-  
-  // แสดงข้อความเตือน + นับถอยหลัง
-  if (Mode.pressedFor(3000)) {
-    display.setCursor(0, 12);
-    display.print(F(">> RELEASE NOW <<"));
-  } else if (Mode.pressedFor(2000)) {
-    display.setCursor(0, 12);
-    display.print(F(">>> Exit [1] <<<"));
-  } else if (Mode.pressedFor(1000)) {
-    display.setCursor(0, 12);
-    display.print(F(">>> Exit [2] <<<"));
-  } else {
-    display.setCursor(0, 12);
-    display.print(F("Hold 3s Exit"));
-  }
-
-  // แสดง Relay ที่เลือก
-  display.setTextSize(2);
-  display.setCursor(0, 26);  // จัดกลางจอ
-  if (selectedRelay == SEL_RL1) {
-    display.print(F(">>RELAY1<<"));
-  } else if (selectedRelay == SEL_RL2) {
-    display.print(F(">>RELAY2<<"));
-  } else if (selectedRelay == SEL_RL3) {
-    display.print(F(">>RELAY3<<"));
-  }
-
-  // แสดงสถานะ Relay ทั้ง 3 ตัว
-  display.setTextSize(1);
-  display.setCursor(0, 48);  // จัดกลาง
-  display.print(F("R1:"));
-  display.print(RL1.isOn() ? F("ON ") : F("OFF"));
-  
-  display.print(F(" R2:"));
-  display.print(RL2.isOn() ? F("ON ") : F("OFF"));
-  
-  display.print(F(" R3:"));
-  display.print(RL3.isOn() ? F("ON") : F("OFF"));
-}
-
 void displayError(String title, String msg) {
   display.clearDisplay();
   display.setTextColor(WHITE);
@@ -864,8 +598,6 @@ void debugSerial() {
     case STATE_PROCESSING: Serial.print(F("PROC")); break;
     case STATE_SETPOINT_CONFIG: Serial.print(F("SP_CFG")); break;
     case STATE_PID_CONFIG: Serial.print(F("PID_CFG")); break;
-    case STATE_MANUAL_PWM: Serial.print(F("MANUAL")); break;
-    case STATE_MANUAL_RELAY: Serial.print(F("RELAY")); break;
   }
   
   Serial.print(F(", Set:")); Serial.print(Setpoint);
@@ -874,12 +606,6 @@ void debugSerial() {
   if (currentState == STATE_PROCESSING) {
     Serial.print(F(", Out:")); Serial.print(Output);
     Serial.print(F(", PWM%:")); Serial.print(map(Output, 0, 255, 0, 100));
-  } else if (currentState == STATE_MANUAL_PWM) {
-    Serial.print(F(", ManPWM:")); Serial.print(manualPWM);
-  } else if (currentState == STATE_MANUAL_RELAY) {
-    Serial.print(F(", RL1:")); Serial.print(RL1.isOn() ? F("ON") : F("OFF"));
-    Serial.print(F(", RL2:")); Serial.print(RL2.isOn() ? F("ON") : F("OFF"));
-    Serial.print(F(", RL3:")); Serial.print(RL3.isOn() ? F("ON") : F("OFF"));
   }
   
   Serial.println();
@@ -900,12 +626,6 @@ void saveSettings() {
   preferences.putFloat("ki", (float)Ki);
   preferences.putFloat("kd", (float)Kd);
   
-  // บันทึก Manual Relay State
-  preferences.putUChar("selRelay", (uint8_t)selectedRelay);
-  preferences.putBool("rl1State", RL1.isOn());
-  preferences.putBool("rl2State", RL2.isOn());
-  preferences.putBool("rl3State", RL3.isOn());
-  
   preferences.end();
   
   Serial.println(F(">>> Settings saved to Flash Memory <<<"));
@@ -923,13 +643,6 @@ void loadSettings() {
   Ki = preferences.getFloat("ki", 0.5);               // default 0.5
   Kd = preferences.getFloat("kd", 1.0);               // default 1.0
   
-  // โหลด Manual Relay State
-  uint8_t savedRelay = preferences.getUChar("selRelay", 0); // default SEL_RL1
-  selectedRelay = (RelaySelect)savedRelay;
-  bool rl1State = preferences.getBool("rl1State", false);
-  bool rl2State = preferences.getBool("rl2State", false);
-  bool rl3State = preferences.getBool("rl3State", false);
-  
   preferences.end();
   
   // จำกัดค่าให้อยู่ในช่วงที่ถูกต้อง
@@ -942,14 +655,5 @@ void loadSettings() {
   if (Kd < 0.0) Kd = 0.0;
   if (Kd > 10.0) Kd = 10.0;
   
-  // คืนค่าสถานะ Relay (ต้องทำหลัง begin())
-  if (rl1State) RL1.on(); else RL1.off();
-  if (rl2State) RL2.on(); else RL2.off();
-  if (rl3State) RL3.on(); else RL3.off();
-  
   Serial.println(F(">>> Settings loaded from Flash Memory <<<"));
-  Serial.print(F("Selected Relay: ")); Serial.println(selectedRelay + 1);
-  Serial.print(F("RL1: ")); Serial.print(RL1.isOn() ? F("ON") : F("OFF"));
-  Serial.print(F(", RL2: ")); Serial.print(RL2.isOn() ? F("ON") : F("OFF"));
-  Serial.print(F(", RL3: ")); Serial.println(RL3.isOn() ? F("ON") : F("OFF"));
 }
